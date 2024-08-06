@@ -36,7 +36,8 @@ class ScannerViewController: UIViewController {
     private var detectedIBAN: String?
     
     // Ignore list
-    private let ignoreList = ["VALID", "THRU", "VALIO", "THRO","BANK","BANKA","CARD","KART","ZIRAAT","FINANS","IBAN"]
+    private let ignoreList = ["VALID", "THRU", "VALIO", "THRO","BANK","BANKA","CARD","KART","FINANS","IBAN"]
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
@@ -45,6 +46,7 @@ class ScannerViewController: UIViewController {
         
         setupCamera()
         setupUI()
+        configureCameraSettings()
     }
     
     private func setupNavigationBar() {
@@ -81,6 +83,10 @@ class ScannerViewController: UIViewController {
             resultBackground.bottomAnchor.constraint(equalTo: resultStackView.bottomAnchor)
         ])
     }
+    private func startSession() {
+        captureSession?.startRunning()
+    }
+
     
     private func setupCamera() {
         captureSession = AVCaptureSession()
@@ -114,8 +120,43 @@ class ScannerViewController: UIViewController {
         startSession()
     }
     
-    private func startSession() {
-        captureSession?.startRunning()
+    private func configureCameraSettings() {
+        guard let videoCaptureDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else { return }
+        
+        do {
+            try videoCaptureDevice.lockForConfiguration()
+            
+            if videoCaptureDevice.isWhiteBalanceModeSupported(.continuousAutoWhiteBalance) {
+                videoCaptureDevice.whiteBalanceMode = .continuousAutoWhiteBalance
+            }
+            
+            if videoCaptureDevice.isExposureModeSupported(.continuousAutoExposure) {
+                videoCaptureDevice.exposureMode = .continuousAutoExposure
+            }
+            
+            
+            if videoCaptureDevice.isFocusModeSupported(.continuousAutoFocus) {
+                videoCaptureDevice.focusMode = .continuousAutoFocus
+            }
+            
+            videoCaptureDevice.unlockForConfiguration()
+        } catch {
+            print("Error configuring camera: \(error)")
+        }
+    }
+
+    private func preprocessImage(_ image: CIImage) -> CIImage? {
+        let filter = CIFilter(name: "CIExposureAdjust")
+        filter?.setValue(image, forKey: kCIInputImageKey)
+        filter?.setValue(0.7, forKey: kCIInputEVKey)
+
+        if let outputImage = filter?.outputImage {
+            let context = CIContext(options: nil)
+            if let cgImage = context.createCGImage(outputImage, from: outputImage.extent) {
+                return CIImage(cgImage: cgImage)
+            }
+        }
+        return nil
     }
     
     private func detectText(in image: CVPixelBuffer) {
@@ -154,10 +195,9 @@ class ScannerViewController: UIViewController {
         }
         
         
-        request.recognitionLevel = .accurate
+        request.recognitionLevel = .accurate // .fast
         request.recognitionLanguages = ["tr-TR"]
         request.usesLanguageCorrection = true
-        
         
         let requestHandler = VNImageRequestHandler(cvPixelBuffer: image, options: [:])
         do {
@@ -183,11 +223,9 @@ extension ScannerViewController: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         
-        
         if detectedCardNumber == nil || detectedSKT == nil || detectedName == nil || detectedIBAN == nil {
             detectText(in: pixelBuffer)
         }
     }
 }
-
 
